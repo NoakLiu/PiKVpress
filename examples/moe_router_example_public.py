@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MoE路由器Press使用示例
+MoE路由器Press使用示例（使用公开模型）
 
 展示如何在kvpress中使用MoE路由器进行KV缓存压缩
 """
@@ -8,11 +8,10 @@ MoE路由器Press使用示例
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from kvpress.presses import MoERouterPress
-from kvpress import pipeline
 
 def main():
-    # 1. 加载模型和tokenizer（使用公开模型）
-    model_name = "microsoft/DialoGPT-medium"  # 改为公开模型
+    # 1. 加载公开模型和tokenizer
+    model_name = "microsoft/DialoGPT-medium"  # 使用公开的模型
     print(f"正在加载模型: {model_name}")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -158,134 +157,57 @@ def compare_with_baseline():
     stats = moe_press.get_stats()
     print(f"平均辅助损失: {stats['avg_aux_loss']:.4f}")
 
-def advanced_usage_example():
-    """高级使用示例：自定义专家策略"""
-    model_name = "distilgpt2"  # 使用更小的模型
+def test_with_small_model():
+    """使用小型模型测试"""
+    print("\n=== 小型模型测试 ===")
+    
+    # 使用更小的模型
+    model_name = "distilgpt2"  # 更小的模型
+    print(f"正在加载小型模型: {model_name}")
+    
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)
     
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # 创建自定义MoE路由器
-    class CustomMoERouterPress(MoERouterPress):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            # 自定义专家策略
-            self.expert_strategies = {
-                0: "ultra_aggressive",  # 超激进压缩
-                1: "semantic_aware",    # 语义感知压缩
-                2: "temporal_aware",    # 时序感知压缩
-                3: "adaptive"           # 自适应压缩
-            }
-        
-        def _apply_expert_compression(
-            self, 
-            keys: torch.Tensor, 
-            values: torch.Tensor, 
-            strategy: str,
-            router_probs: torch.Tensor
-        ) -> tuple[torch.Tensor, torch.Tensor]:
-            """自定义压缩策略"""
-            batch_size, num_heads, seq_len, head_dim = keys.shape
-            
-            if strategy == "ultra_aggressive":
-                # 只保留前10%和后5%
-                keep_front = max(1, int(seq_len * 0.1))
-                keep_back = max(1, int(seq_len * 0.05))
-                if seq_len > keep_front + keep_back:
-                    keys = torch.cat([keys[:, :, :keep_front], keys[:, :, -keep_back:]], dim=2)
-                    values = torch.cat([values[:, :, :keep_front], values[:, :, -keep_back:]], dim=2)
-                    
-            elif strategy == "semantic_aware":
-                # 基于语义重要性选择位置
-                # 使用注意力权重的方差作为重要性指标
-                attention_variance = torch.var(router_probs, dim=-1)  # [batch_size, seq_len]
-                importance_scores = attention_variance.mean(dim=0)  # [seq_len]
-                
-                num_keep = max(1, int(seq_len * 0.4))
-                _, important_indices = torch.topk(importance_scores, k=num_keep, dim=-1)
-                important_indices = torch.sort(important_indices)[0]
-                
-                keys = keys[:, :, important_indices, :]
-                values = values[:, :, important_indices, :]
-                
-            elif strategy == "temporal_aware":
-                # 时序感知：保留开始、中间和结束部分
-                keep_start = max(1, int(seq_len * 0.2))
-                keep_middle = max(1, int(seq_len * 0.1))
-                keep_end = max(1, int(seq_len * 0.2))
-                
-                if seq_len > keep_start + keep_middle + keep_end:
-                    middle_start = (seq_len - keep_middle) // 2
-                    middle_end = middle_start + keep_middle
-                    
-                    keys = torch.cat([
-                        keys[:, :, :keep_start],
-                        keys[:, :, middle_start:middle_end],
-                        keys[:, :, -keep_end:]
-                    ], dim=2)
-                    values = torch.cat([
-                        values[:, :, :keep_start],
-                        values[:, :, middle_start:middle_end],
-                        values[:, :, -keep_end:]
-                    ], dim=2)
-                    
-            elif strategy == "adaptive":
-                # 自适应：根据序列长度动态调整
-                if seq_len < 100:
-                    # 短序列：保守压缩
-                    keep_ratio = 0.8
-                elif seq_len < 500:
-                    # 中等序列：中等压缩
-                    keep_ratio = 0.6
-                else:
-                    # 长序列：激进压缩
-                    keep_ratio = 0.4
-                
-                num_keep = max(1, int(seq_len * keep_ratio))
-                keys = keys[:, :, :num_keep, :]
-                values = values[:, :, :num_keep, :]
-            
-            return keys, values
-    
-    # 使用自定义MoE路由器
-    custom_moe_press = CustomMoERouterPress(
-        num_experts=4,
-        top_k=2,
-        router_type="pikv",
-        cache_aware=True
+    # 创建MoE路由器Press
+    moe_press = MoERouterPress(
+        num_experts=2,  # 减少专家数量
+        top_k=1,        # 减少top_k
+        router_type="base",  # 使用基础路由器
+        cache_aware=False
     )
     
-    text = "This is a test of the custom MoE router with advanced compression strategies. " * 15
+    text = "Hello world, this is a test of the MoE router. " * 10
     
-    with custom_moe_press(model):
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=256)
+    with moe_press(model):
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
         
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=30,
+                max_new_tokens=20,
                 do_sample=False,
                 pad_token_id=tokenizer.eos_token_id
             )
         
         generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        print(f"自定义MoE路由器生成的文本: {generated_text}")
+        print(f"生成的文本: {generated_text}")
     
-    # 获取自定义统计
-    stats = custom_moe_press.get_stats()
-    print(f"自定义MoE路由器平均辅助损失: {stats['avg_aux_loss']:.4f}")
+    # 获取统计
+    stats = moe_press.get_stats()
+    print(f"小型模型测试完成，平均辅助损失: {stats['avg_aux_loss']:.4f}")
 
 if __name__ == "__main__":
-    print("=== MoE路由器Press示例 ===\n")
+    print("=== MoE路由器Press示例（公开模型）===\n")
     
     try:
         main()
         print("\n" + "="*50 + "\n")
         compare_with_baseline()
         print("\n" + "="*50 + "\n")
-        advanced_usage_example()
+        test_with_small_model()
     except Exception as e:
         print(f"运行示例时出错: {e}")
         print("请确保已安装所需的依赖包")
