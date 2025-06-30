@@ -297,7 +297,7 @@ class ExperimentRunner:
                     self.results.append(result1)
                 
                 # Method 2: Duo Attention Only
-                duo_press = DuoAttentionPress(compression_ratio=compression_ratio)
+                duo_press = DuoAttentionPress(head_compression_ratio=compression_ratio)
                 result2 = self._run_single_experiment(
                     "Duo Attention", 
                     duo_press, 
@@ -314,7 +314,7 @@ class ExperimentRunner:
                     top_k=self.config.top_k,
                     compression_ratio=compression_ratio * 0.7  # Slightly less aggressive
                 )
-                duo_press_combined = DuoAttentionPress(compression_ratio=compression_ratio * 0.3)
+                duo_press_combined = DuoAttentionPress(head_compression_ratio=compression_ratio * 0.3)
                 combined_press = ComposedPress([eplb_press, duo_press_combined])
                 
                 result3 = self._run_single_experiment(

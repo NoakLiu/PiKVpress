@@ -101,7 +101,7 @@ def main():
     
     # Method 2: Duo Attention
     print(f"\n🔍 Testing Duo Attention...")
-    duo_press = DuoAttentionPress(compression_ratio=compression_ratio)
+    duo_press = DuoAttentionPress(head_compression_ratio=compression_ratio)
     
     torch.cuda.empty_cache() if device == "cuda" else None
     torch.cuda.reset_peak_memory_stats() if device == "cuda" else None
@@ -140,7 +140,7 @@ def main():
             top_k=2,
             compression_ratio=compression_ratio * 0.7
         )
-        duo_press_combined = DuoAttentionPress(compression_ratio=compression_ratio * 0.3)
+        duo_press_combined = DuoAttentionPress(head_compression_ratio=compression_ratio * 0.3)
         combined_press = ComposedPress([eplb_press, duo_press_combined])
         
         torch.cuda.empty_cache() if device == "cuda" else None

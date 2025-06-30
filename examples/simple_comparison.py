@@ -150,7 +150,7 @@ def main():
         results.append(result1)
     
     # Method 2: Duo Attention Only
-    duo_press = DuoAttentionPress(compression_ratio=compression_ratio)
+    duo_press = DuoAttentionPress(head_compression_ratio=compression_ratio)
     result2 = run_experiment("Duo Attention", duo_press, model, tokenizer, context, question)
     if result2:
         results.append(result2)
@@ -162,7 +162,7 @@ def main():
         top_k=2,
         compression_ratio=compression_ratio * 0.7  # Slightly less aggressive
     )
-    duo_press_combined = DuoAttentionPress(compression_ratio=compression_ratio * 0.3)
+    duo_press_combined = DuoAttentionPress(head_compression_ratio=compression_ratio * 0.3)
     combined_press = ComposedPress([eplb_press, duo_press_combined])
     
     result3 = run_experiment("EPLB + Duo Attention", combined_press, model, tokenizer, context, question)
