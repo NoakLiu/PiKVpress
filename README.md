@@ -466,10 +466,10 @@ If you use PiKV Routing in your research, please cite:
 
 ```bibtex
 @misc{PiKVpress2024,
-  title={PiKVPress: KV Cache Compression with PiKV Routing},
+  title={PiKVpress: KV Cache Compression with PiKV Routing},
   author={Dong Liu},
   year={2024},
-  url={https://github.com/NoakLiu/kvpress}
+  url={https://github.com/NoakLiu/PiKVpress}
 }
 ```
 
