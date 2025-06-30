@@ -3,508 +3,401 @@
 [![PyPI version](https://badge.fury.io/py/kvpress.svg)](https://badge.fury.io/py/kvpress)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Colab example notebook](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1JNvaTKuuAHrl49dYB9-mdEH_y52Ib-NP?usp=drive_link)
-[![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face-Space-blue)](https://huggingface.co/spaces/nvidia/kvpress)
+<!-- [![Hugging Face Space](https://img.shields.io/badge/🤗%20Hugging%20Face-Space-blue)](https://huggingface.co/spaces/nvidia/kvpress) -->
 
 
-![kvpress](kvpress.jpg)
+<!-- ![kvpress](kvpress.jpg) -->
 
 
 Deploying long-context LLMs is costly due to the linear growth of the key-value (KV) cache in transformer models. For example, handling 1M tokens with Llama 3.1-70B in float16 requires up to 330GB of memory. kvpress implements multiple KV cache compression methods and benchmarks using 🤗 transformers, aiming to simplify the development of new methods for researchers and developers in this field.
 
-## 概述
+## Overview
 
-KVPress 是一个强大的 KV 缓存压缩框架，现在集成了 **PiKV Routing** 技术，通过 Mixture of Experts (MoE) 架构实现智能的 KV 缓存压缩。PiKV Routing 能够根据输入特征和缓存使用情况动态选择最优的压缩策略，显著提升长上下文处理的内存效率和推理速度。
+PiKVPress is a powerful KV cache compression framework that integrates **PiKV Routing** technology, implementing intelligent KV cache compression through Mixture of Experts (MoE) architecture. PiKV Routing dynamically selects optimal compression strategies based on input features and cache usage patterns, significantly improving memory efficiency and inference speed for long-context processing.
 
-### 核心特性
+### Core Features
 
-- 🚀 **PiKV Routing**: 基于 MoE 的智能路由系统
-- 🎯 **多专家压缩**: 4种不同的压缩策略专家
-- 📊 **缓存感知**: 实时监控缓存使用情况
-- 🔄 **自适应调整**: 动态调整压缩策略
-- 💾 **内存优化**: 显著减少 KV 缓存内存占用
-- ⚡ **性能提升**: 加速长上下文推理
+- 🚀 **PiKV Routing**: MoE-based intelligent routing system
+- 🎯 **Multi-Expert Compression**: 4 different compression strategy experts
+- 📊 **Cache-Aware**: Real-time cache usage monitoring
+- 🔄 **Adaptive Adjustment**: Dynamic compression strategy adjustment
+- 💾 **Memory Optimization**: Significantly reduce KV cache memory usage
+- ⚡ **Performance Boost**: Accelerate long-context inference
 
 ## Installation
 
-```bash
-pip install kvpress
-```
-
-推荐安装 flash attention 以获得最佳性能：
-```bash
-pip install flash-attn --no-build-isolation
-```
-
-For a local installation with all dev dependencies, use poetry:
 
 ```bash
-git clone https://github.com/NVIDIA/kvpress.git
+git clone https://github.com/NoakLiu/kvpress.git
 cd kvpress
 poetry install --with dev
 ```
 
-## Usage
+## Quick Start
 
-kvpress provides a set of "presses" that compress the KV cache during the prefilling-phase. Each press is associated with a `compression_ratio` attribute that measures the compression of the cache. The easiest way to use a press is through our custom `KVPressTextGenerationPipeline`. It is automatically registered as a transformers pipeline with the name "kv-press-text-generation" when kvpress is imported and handles chat templates and tokenization for you:
-
-```python
-from transformers import pipeline
-from kvpress import ExpectedAttentionPress
-
-device = "cuda:0"
-model = "meta-llama/Llama-3.1-8B-Instruct"
-model_kwargs = {"attn_implementation": "flash_attention_2"}
-pipe = pipeline("kv-press-text-generation", model=model, device=device, model_kwargs=model_kwargs)
-
-context = "A very long text you want to compress once and for all"
-question = "\nA question about the compressed context"  # optional
-
-press = ExpectedAttentionPress(compression_ratio=0.5)
-answer = pipe(context, question=question, press=press)["answer"]
-```
-
-In the snippet above, the compression is only applied on the context tokens so that you can evaluate the compression for different questions. Check the [Wikipedia notebook demo](notebooks/wikipedia_demo.ipynb) for a more detailed example (also available on Colab [here](https://colab.research.google.com/drive/1JNvaTKuuAHrl49dYB9-mdEH_y52Ib-NP)).
-
-> [!IMPORTANT]  
-> We focus on compression during the pre-filling phase as the KV cache becomes a bottleneck for long-context sequence (100k - 1M tokens) which are essentially long context prompts. This would typically apply to improving prompt caching systems.
-
-> [!NOTE]  
-> Use `model_kwargs={"attn_implementation":"flash_attention_2"}` to enable flash attention. To use the press `ObservedAttentionPress`, you need to specify `model_kwargs={"attn_implementation":"eager"}` as this press requires to materialize the attention weights
-
-## Contributing
-
-We welcome contributions! To add a new press, simply open an issue or submit a pull request. Check the [new_press.ipynb](notebooks/new_press.ipynb) notebook for a step-by-step guide.
-
-## Available presses
-
-All current presses are training free and inherit from `BasePress` ([source](kvpress/presses/base_press.py)). 
-
-Several presses inherit from `ScorerPress` ([source](kvpress/presses/scorer_press.py)) and rely on a score to prune the KV pairs with lowest importance:
-
-- `RandomPress` ([source](kvpress/presses/random_press.py)): random score
-- `KnormPress` ([source](kvpress/presses/knorm_press.py), [paper](https://arxiv.org/abs/2406.11430)): inverse norm of the key
-- `SnapKVPress` ([source](kvpress/presses/snapkv_press.py), [paper](https://arxiv.org/abs/2404.14469)): average attention weight of the last queries
-- `ExpectedAttentionPress` ([source](kvpress/presses/expected_attention_press.py), [notebook](notebooks/expected_attention.ipynb)): expected attention weight during the generation phase 
-- `StreamingLLMPress` ([source](kvpress/presses/streaming_llm_press.py), [paper](https://arxiv.org/abs/2309.17453)): keep only the initial and recent tokens 
-- `TOVAPress` ([source](kvpress/presses/tova_press.py), [paper](https://arxiv.org/abs/2401.06104)): attention weight of the last query averaged across heads 
-- `ObservedAttentionPress` ([source](kvpress/presses/observed_attention_press.py), [paper](https://arxiv.org/abs/2306.14048)): average attention weight observed during in pre-filling phase
-- `QFilterPress` ([source](kvpress/presses/qfilter_press.py), [paper](https://arxiv.org/abs/2503.02812)): project the Key representations on the main SVD component of the Query vectors to approximate the attention scores.
-- `PyramidKVPress` ([source](kvpress/presses/pyramidkv_press.py), [paper](https://arxiv.org/abs/2406.02069)): maintain pyramid-like cache sizes, allocating more cache budget to lower layers and less to higher layers
-- `LagKVPress` ([source](kvpress/presses/lagkv_press.py), [paper](https://arxiv.org/abs/2504.04704)): leverage on the KV lag-relative information to compress. It's query free, attention-weight free, and flash-attention compatible.
-
-Some presses rely on a different logic:
-- `ThinKPress` ([source](kvpress/presses/think_press.py), [paper](https://arxiv.org/pdf/2407.21018)): compress the dimensions of the keys based on the channel attention score on the last queries 
-- `SimLayerKVPress` ([source](kvpress/presses/simlayerkv_press.py), [paper](https://arxiv.org/abs/2410.13846)): identify "lazy" layers, and apply the StreamingLLM approach to them 
-- `DuoAttentionPress` ([source](kvpress/presses/duo_attention_press.py), [paper](https://arxiv.org/abs/2410.10819)): split heads into retrieval heads (no compression) and streaming heads (StreamingLLM approach)
-- `FinchPress` ([source](kvpress/presses/finch_press.py), [paper](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00716/125280)): similar to SnapKV with a dynamic window size and key value re-rotation
-
-Finally we provide wrapper presses that can be combined with other presses:
-- `AdaKVPress` ([source](kvpress/presses/adakv_press.py), [paper](https://arxiv.org/abs/2407.11550)): prune bottom scores of any `ScorerPress` but across all heads, achieving head-wise compressions 
-- `PerLayerCompressionPress` ([source](kvpress/presses/per_layer_compression_press.py)): compress each layer with a different compression ratio (experimental)
-- `ComposedPress` ([source](kvpress/presses/composed_press.py)): compose multiple presses together by chaining their forward hooks
-- `KeyRerotationPress` ([source](kvpress/presses/key_rerotation_press.py)): rerotate pruned keys to have continuous RoPE embeddings
-- `ChunkKVPress` ([source](kvpress/presses/chunkkv_press.py), [paper](https://arxiv.org/abs/2502.00299)): compresses by selecting important chunks, preserving semantic coherence
-- `ChunkPress` ([source](kvpress/presses/chunk_press.py), [paper](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00716/125280)): compress the KV cache on each sequence chunk separately. This can yield to more uniform compression across long sequences
-- `CriticalKVPress` and `CriticalAdaKVPress` ([source](kvpress/presses/criticalkv_press.py), [paper](https://arxiv.org/abs/2502.03805)): refine the scores using the L1 norm of Wo @ values, coupled with a two-stage selection.
-
-
-For a detailed list of existing KV cache compression methods, check [Awesome-KV-Cache-Compression](https://github.com/October2001/Awesome-KV-Cache-Compression) or [Awesome-LLM-Compression](https://github.com/HuangOwen/Awesome-LLM-Compression?tab=readme-ov-file#kv-cache-compression)
-
-## Evaluation
-
-The [speed_and_memory.ipynb](notebooks/speed_and_memory.ipynb) notebook can help you to measure peak memory usage and total time gain.
-
-![memory](evaluation/assets/peak_memory_consumption_xkcd.png)
-
-We provide a simple CLI to evaluate the performance of the different presses on several long-context datasets. Below we report the average performance on the RULER dataset with 4k context length for different presses.
-
-![RULER](evaluation/assets/ruler_llama_xkcd.png)
-
-Please refer to the [evaluation](evaluation/README.md) directory for more details and results.
-
-## Quantization
-
-We support KV cache quantization through the transformers `QuantizedCache` class (see [HF blog post](https://huggingface.co/blog/kv-cache-quantization#how-to-use-quantized-kv-cache-in-%F0%9F%A4%97-transformers)). To use it, simply pass a cache object to your pipeline:
-
-```python
-from transformers import QuantizedCacheConfig, QuantoQuantizedCache
-
-config = QuantizedCacheConfig(nbits=4)
-cache = QuantoQuantizedCache(config)
-
-pipe(..., cache=cache)
-```
-
-By default, the `DynamicCache` is used (no quantization). 
-
-> [!IMPORTANT]  
-> To use the `QuantizedCache`, you need to install additional dependencies (_e.g._ `pip install optimum-quanto`).
-
-## FAQ
-
-<details><summary> 
-
-### Which models are supported ? 
-</summary>
-
-Some presses depend on the model architecture (_e.g._ `ExpectedAttentionPress` or `SnapKVPress`) hence they might not work with all models. We tested support for `LlamaForCausalLM`, `MistralForCausalLM`, `Phi3ForCausalLM` and `Qwen2ForCausalLM` but many other models might be supported out of the box because their implementation is often similar in transformers.
-</details>
-
-<details><summary> 
-
-### How to run inference on multiple GPUs ? 
-</summary>
-
-kvpress supports multi-GPU inference through [accelerate](https://huggingface.co/docs/accelerate/en/index):
-
-```python
-pipe = pipeline("kv-press-text-generation", model=model, device_map="auto")
-```
-
-</details>
-
-
-<details> <summary> 
-
-### What are the memory and throughput gains ?
-</summary>
-
-Memory usage should be reduced by around `compression_ratio * kv_cache_size`. As the KV cache is smaller, decoding should also be faster. You can measure peak memory usage gain and total time gain using [this notebook](notebooks/speed_and_memory.ipynb).
-</details>
-
-
-<details> <summary> 
-
-### How does a press work ? </summary>
-
-A press registers a forward hook (`press.forward_hook` method) to each attention layer during the pre-filling phase. Registration can be applied using the press as a context manager (`press.__call__` method):
-
-```python
-import torch
-from transformers import AutoModelForCausalLM
-from kvpress import KnormPress
-
-device = "cuda:0"
-ckpt = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-model = AutoModelForCausalLM.from_pretrained(ckpt).to(device)
-press = KnormPress(compression_ratio=0.4)
-
-inputs = model.dummy_inputs["input_ids"].to(device)
-
-with torch.no_grad():
-    print(model(inputs).past_key_values[0][0].shape)
-    # torch.Size([3, 8, 5, 128])
-    
-with torch.no_grad(), press(model):
-    print(model(inputs).past_key_values[0][0].shape)
-    # torch.Size([3, 8, 3, 128])
-```
-</details>
-
-<details><summary> 
-
-### Why not using model.generate ? 
-</summary>
-
-In fact you can use `model.generate` with a press by using the press as a context manager:
-
-```python
-with press(model):
-    outputs = model.generate(inputs)
-```
-
-However, the `generate` method does not allow to exclude the question from the compression, which would artificially favors methods such as SnapKV. Ideally, we want a compression method that works whatever comes after the context (_e.g._ for use cases such as chat or document question answering). Finally the `generate` method does not allow to provide generation for multiple questions at once.
-
-</details>
-
-## PiKV Routing 快速开始
-
-### 基础用法
+### Basic Usage
 
 ```python
 from transformers import pipeline
 from kvpress import MoERouterPress
 
-# 创建 PiKV MoE 路由器
+# Create PiKV MoE router
 press = MoERouterPress(
-    router_type="pikv",           # 使用 PiKV 路由器
-    num_experts=4,                # 4个专家
-    top_k=2,                      # 选择前2个专家
-    compression_ratio=0.5,        # 目标压缩比50%
-    cache_aware=True,             # 启用缓存感知
-    importance_threshold=0.5      # 重要性阈值
+    router_type="pikv",           # Use PiKV router
+    num_experts=4,                # 4 experts
+    top_k=2,                      # Select top 2 experts
+    compression_ratio=0.5,        # Target 50% compression ratio
+    cache_aware=True,             # Enable cache awareness
+    importance_threshold=0.5      # Importance threshold
 )
 
-# 创建推理管道
+# Create inference pipeline
 device = "cuda:0"
-model = "microsoft/DialoGPT-medium"  # 或使用其他支持的模型
+model = "microsoft/DialoGPT-medium"  # Or use other supported models
 pipe = pipeline("kv-press-text-generation", model=model, device=device)
 
-# 长上下文文本
-context = "这是一个很长的上下文文本，包含大量信息..."
-question = "基于上述上下文，请回答问题"
+# Long context text
+context = "This is a very long context text containing lots of information..."
+question = "Based on the above context, please answer the question"
 
-# 使用 PiKV Routing 进行推理
+# Use PiKV Routing for inference
 answer = pipe(context, question=question, press=press)["answer"]
 print(answer)
 ```
 
-### 高级配置
+### Advanced Configuration
 
 ```python
-# 自定义 PiKV 路由器配置
+# Custom PiKV router configuration
 press = MoERouterPress(
     router_type="pikv",
     num_experts=4,
     top_k=2,
-    capacity_factor=1.5,          # 容量因子
-    dropout=0.1,                  # Dropout 率
-    compression_ratio=0.6,        # 压缩比
-    aux_loss_weight=0.01,         # 辅助损失权重
+    capacity_factor=1.5,          # Capacity factor
+    dropout=0.1,                  # Dropout rate
+    compression_ratio=0.6,        # Compression ratio
+    aux_loss_weight=0.01,         # Auxiliary loss weight
     cache_aware=True,
     importance_threshold=0.6,
-    adaptive_top_k=True           # 自适应 top_k
+    adaptive_top_k=True           # Adaptive top_k
 )
 
-# 获取压缩统计信息
+# Get compression statistics
 stats = press.get_stats()
-print(f"平均辅助损失: {stats['avg_aux_loss']:.4f}")
-print(f"专家使用情况: {stats['layer_stats']}")
+print(f"Average auxiliary loss: {stats['avg_aux_loss']:.4f}")
+print(f"Expert usage: {stats['layer_stats']}")
 ```
 
-## PiKV Routing 方法详解
+## Combining Different Presses
 
-### 1. 专家系统架构
+PiKVPress supports combining multiple compression strategies for enhanced performance. Here are several ways to combine different presses:
 
-PiKV Routing 使用 4 个专门的压缩专家：
+### 1. ComposedPress - Sequential Combination
 
 ```python
-expert_strategies = {
-    0: "aggressive",    # 激进压缩：保留前20%和后10%
-    1: "moderate",      # 中等压缩：保留前30%和后20%
-    2: "conservative",  # 保守压缩：保留前50%和后30%
-    3: "selective"      # 选择性压缩：基于重要性分数
+from kvpress import MoERouterPress, KnormPress, ComposedPress
+
+# Create individual presses
+pikv_press = MoERouterPress(router_type="pikv", compression_ratio=0.3)
+knorm_press = KnormPress(compression_ratio=0.2)
+
+# Combine them sequentially
+composed_press = ComposedPress([pikv_press, knorm_press])
+
+# Use the combined press
+with composed_press(model):
+    outputs = model.generate(inputs)
+```
+
+### 2. Per-Layer Compression
+
+```python
+from kvpress import PerLayerCompressionPress, MoERouterPress, ExpectedAttentionPress
+
+# Different compression strategies for different layers
+layer_presses = {
+    0: MoERouterPress(router_type="pikv", compression_ratio=0.4),      # First layer
+    1: ExpectedAttentionPress(compression_ratio=0.3),                   # Second layer
+    2: KnormPress(compression_ratio=0.5),                               # Third layer
+    # ... other layers
 }
+
+per_layer_press = PerLayerCompressionPress(layer_presses)
+
+# Apply different compression to each layer
+with per_layer_press(model):
+    outputs = model.generate(inputs)
 ```
 
-### 2. 路由决策过程
+### 3. AdaKVPress with MoE Router
 
 ```python
-# 1. 计算输入重要性
-importance = importance_predictor(hidden_states)
+from kvpress import AdaKVPress, MoERouterPress
 
-# 2. 自适应调整 top_k
-current_top_k = adapt_top_k(hidden_states, importance)
+# Create base MoE router
+base_press = MoERouterPress(router_type="pikv", compression_ratio=0.4)
 
-# 3. 计算路由概率
-router_logits = router_network(hidden_states)
-router_probs = softmax(router_logits)
+# Apply AdaKV head-wise compression on top
+adapress = AdaKVPress(base_press, compression_ratio=0.2)
 
-# 4. 缓存感知调整
-if cache_aware:
-    cache_adjustments = cache_router_adjustment(features, cache_rates)
-    router_logits += cache_adjustments
-
-# 5. 选择专家
-top_k_probs, top_k_indices = topk(router_probs, current_top_k)
+# Use the enhanced press
+with adapress(model):
+    outputs = model.generate(inputs)
 ```
 
-### 3. 缓存感知机制
+### 4. Custom Press Combination
 
 ```python
-# 实时监控缓存使用情况
-def update_cache_usage(self, expert_idx: int, cache_hit_rate: float):
-    """更新专家的缓存使用情况"""
-    self.cache_hit_rates[expert_idx] = cache_hit_rate
-    self.cache_usage_history[expert_idx, history_idx] = cache_hit_rate
+from kvpress import BasePress, MoERouterPress, KnormPress
+import torch
 
-# 基于缓存状态调整路由
-def compute_cache_aware_adjustment(self, hidden_states, router_logits):
-    """计算缓存感知的路由调整"""
-    cache_rates = self.cache_hit_rates
-    adjustment_factors = self.cache_router_adjustment(
-        torch.cat([features, cache_rates], dim=-1)
+class CustomCombinedPress(BasePress):
+    def __init__(self, pikv_ratio=0.3, knorm_ratio=0.2):
+        super().__init__()
+        self.pikv_press = MoERouterPress(router_type="pikv", compression_ratio=pikv_ratio)
+        self.knorm_press = KnormPress(compression_ratio=knorm_ratio)
+        self.combination_weight = 0.7  # Weight for PiKV vs Knorm
+    
+    def compress(self, module, hidden_states, keys, values, attentions, kwargs):
+        # Apply PiKV compression
+        pikv_keys, pikv_values = self.pikv_press.compress(
+            module, hidden_states, keys, values, attentions, kwargs
+        )
+        
+        # Apply Knorm compression
+        knorm_keys, knorm_values = self.knorm_press.compress(
+            module, hidden_states, keys, values, attentions, kwargs
+        )
+        
+        # Combine results based on importance
+        importance = self._compute_importance(hidden_states)
+        
+        # Use PiKV for important tokens, Knorm for others
+        combined_keys = torch.where(
+            importance.unsqueeze(-1).unsqueeze(-1) > 0.5,
+            pikv_keys, knorm_keys
+        )
+        combined_values = torch.where(
+            importance.unsqueeze(-1).unsqueeze(-1) > 0.5,
+            pikv_values, knorm_values
+        )
+        
+        return combined_keys, combined_values
+    
+    def _compute_importance(self, hidden_states):
+        # Simple importance computation based on norm
+        return torch.norm(hidden_states, dim=-1)
+
+# Use custom combined press
+custom_press = CustomCombinedPress(pikv_ratio=0.3, knorm_ratio=0.2)
+with custom_press(model):
+    outputs = model.generate(inputs)
+```
+
+### 5. Pipeline Combination Example
+
+```python
+from transformers import pipeline
+from kvpress import MoERouterPress, ComposedPress, KnormPress
+
+# Create a sophisticated press combination
+def create_advanced_press():
+    # Primary: PiKV router for intelligent routing
+    primary_press = MoERouterPress(
+        router_type="pikv",
+        num_experts=4,
+        compression_ratio=0.4,
+        cache_aware=True
     )
-    return adjustment_factors
+    
+    # Secondary: Knorm for additional compression
+    secondary_press = KnormPress(compression_ratio=0.2)
+    
+    # Combine them
+    return ComposedPress([primary_press, secondary_press])
+
+# Create pipeline with combined press
+press = create_advanced_press()
+pipe = pipeline("kv-press-text-generation", 
+                model="microsoft/DialoGPT-medium", 
+                device="cuda:0")
+
+# Process multiple documents with different compression strategies
+documents = [
+    "Long document 1...",
+    "Long document 2...",
+    "Long document 3..."
+]
+
+for i, doc in enumerate(documents):
+    # Adjust compression based on document characteristics
+    if len(doc) > 10000:  # Very long document
+        press.presses[0].compression_ratio = 0.6  # More aggressive
+    else:
+        press.presses[0].compression_ratio = 0.3  # Conservative
+    
+    answer = pipe(doc, question="Summarize this document", press=press)["answer"]
+    print(f"Document {i+1}: {answer[:100]}...")
 ```
 
-## 支持的路由器类型
+### 6. Performance Comparison Script
 
-### 1. PiKV Router (推荐)
+```python
+import time
+import torch
+from kvpress import MoERouterPress, KnormPress, ComposedPress
+
+def benchmark_press_combinations(model, inputs, context_length=1000):
+    """Benchmark different press combinations"""
+    
+    combinations = {
+        "PiKV Only": MoERouterPress(router_type="pikv", compression_ratio=0.5),
+        "Knorm Only": KnormPress(compression_ratio=0.5),
+        "PiKV + Knorm": ComposedPress([
+            MoERouterPress(router_type="pikv", compression_ratio=0.3),
+            KnormPress(compression_ratio=0.2)
+        ]),
+        "Adaptive PiKV": MoERouterPress(
+            router_type="pikv", 
+            compression_ratio=0.5,
+            adaptive_top_k=True
+        )
+    }
+    
+    results = {}
+    
+    for name, press in combinations.items():
+        print(f"\nTesting {name}...")
+        
+        # Measure memory usage
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        
+        start_time = time.time()
+        with press(model):
+            outputs = model.generate(inputs, max_new_tokens=100)
+        end_time = time.time()
+        
+        memory_used = torch.cuda.max_memory_allocated() / 1024**3  # GB
+        inference_time = end_time - start_time
+        
+        results[name] = {
+            "memory_gb": memory_used,
+            "time_seconds": inference_time,
+            "tokens_per_second": 100 / inference_time
+        }
+        
+        print(f"  Memory: {memory_used:.2f} GB")
+        print(f"  Time: {inference_time:.2f} seconds")
+        print(f"  Speed: {100/inference_time:.1f} tokens/sec")
+    
+    return results
+
+# Run benchmark
+model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-medium").to("cuda")
+inputs = torch.randint(0, 1000, (1, 1000)).to("cuda")
+
+results = benchmark_press_combinations(model, inputs)
+
+# Print comparison
+print("\n" + "="*60)
+print("PERFORMANCE COMPARISON")
+print("="*60)
+for name, metrics in results.items():
+    print(f"{name:15} | {metrics['memory_gb']:6.2f} GB | {metrics['time_seconds']:6.2f}s | {metrics['tokens_per_second']:6.1f} tok/s")
+```
+
+## Supported Router Types
+
+### 1. PiKV Router (Recommended)
 ```python
 press = MoERouterPress(router_type="pikv")
 ```
-- 缓存感知路由
-- 重要性自适应
-- 动态 top_k 调整
+- Cache-aware routing
+- Importance-based adaptation
+- Dynamic top_k adjustment
 
 ### 2. TopK Balanced Router
 ```python
 press = MoERouterPress(router_type="topk_balanced")
 ```
-- 负载平衡优化
-- 多种平衡策略 (entropy, variance, gini)
+- Load balancing optimization
+- Multiple balance strategies (entropy, variance, gini)
 
 ### 3. Adaptive Router
 ```python
 press = MoERouterPress(router_type="adaptive")
 ```
-- 基于输入重要性调整
-- 自适应 top_k 选择
+- Input importance-based adjustment
+- Adaptive top_k selection
 
 ### 4. EPLB Router
 ```python
 press = MoERouterPress(router_type="eplb")
 ```
-- 精确负载平衡
-- 严格的容量约束
+- Exact perfect load balancing
+- Strict capacity constraints
 
 ### 5. Hierarchical Router
 ```python
 press = MoERouterPress(router_type="hierarchical")
 ```
-- 层次化路由
-- 组级和专家级两级路由
+- Hierarchical routing
+- Two-level routing (group-level and expert-level)
 
-## 效果评估
+## Performance Evaluation
 
-### 内存节省
+### Memory Savings
 
 ```python
-# 测量内存使用
+# Measure memory usage
 import torch
 from kvpress.utils import measure_memory_usage
 
-# 不使用压缩
+# Without compression
 memory_without_press = measure_memory_usage(model, inputs)
 
-# 使用 PiKV Routing
+# With PiKV Routing
 with press(model):
     memory_with_press = measure_memory_usage(model, inputs)
 
 memory_saved = memory_without_press - memory_with_press
 compression_ratio = memory_saved / memory_without_press
-print(f"内存节省: {compression_ratio:.2%}")
+print(f"Memory saved: {compression_ratio:.2%}")
 ```
 
-### 性能提升
+### Performance Improvement
 
 ```python
 import time
 
-# 基准测试
+# Baseline test
 start_time = time.time()
 outputs = model.generate(inputs)
 baseline_time = time.time() - start_time
 
-# PiKV Routing 测试
+# PiKV Routing test
 start_time = time.time()
 with press(model):
     outputs = model.generate(inputs)
 pikv_time = time.time() - start_time
 
 speedup = baseline_time / pikv_time
-print(f"速度提升: {speedup:.2f}x")
+print(f"Speed improvement: {speedup:.2f}x")
 ```
 
-### 典型效果
+### Typical Results
 
-| 指标 | 无压缩 | PiKV Routing | 提升 |
-|------|--------|--------------|------|
-| 内存使用 | 100% | 40-60% | 40-60% |
-| 推理速度 | 1x | 1.5-2.5x | 50-150% |
-| 压缩比 | 0% | 50-70% | - |
-| 缓存命中率 | - | 85-95% | - |
+| Metric | No Compression | PiKV Routing | Improvement |
+|--------|----------------|--------------|-------------|
+| Memory Usage | 100% | 40-60% | 40-60% |
+| Inference Speed | 1x | 1.5-2.5x | 50-150% |
+| Compression Ratio | 0% | 50-70% | - |
+| Cache Hit Rate | - | 85-95% | - |
 
-## 完整示例
+## Supported Models
 
-### 长文档问答
-
-```python
-from transformers import pipeline
-from kvpress import MoERouterPress
-
-# 配置 PiKV 路由器
-press = MoERouterPress(
-    router_type="pikv",
-    num_experts=4,
-    compression_ratio=0.6,
-    cache_aware=True
-)
-
-# 创建管道
-pipe = pipeline("kv-press-text-generation", 
-                model="microsoft/DialoGPT-medium", 
-                device="cuda:0")
-
-# 长文档
-long_document = """
-[这里是一个很长的文档，包含大量信息...]
-"""
-
-# 多个问题
-questions = [
-    "文档的主要观点是什么？",
-    "有哪些关键数据？",
-    "结论是什么？"
-]
-
-# 批量处理
-for question in questions:
-    answer = pipe(long_document, question=question, press=press)["answer"]
-    print(f"问题: {question}")
-    print(f"答案: {answer}\n")
-
-# 获取统计信息
-stats = press.get_stats()
-print("压缩统计:")
-print(f"- 平均辅助损失: {stats['avg_aux_loss']:.4f}")
-print(f"- 总前向次数: {stats['forward_count']}")
-```
-
-### 实时聊天机器人
-
-```python
-class PiKVChatBot:
-    def __init__(self, model_name="microsoft/DialoGPT-medium"):
-        self.press = MoERouterPress(
-            router_type="pikv",
-            compression_ratio=0.5,
-            cache_aware=True
-        )
-        self.pipe = pipeline("kv-press-text-generation", 
-                           model=model_name, 
-                           device="cuda:0")
-        self.conversation_history = []
-    
-    def chat(self, user_input: str) -> str:
-        # 构建对话历史
-        context = "\n".join(self.conversation_history + [user_input])
-        
-        # 使用 PiKV Routing 生成回复
-        response = self.pipe(context, press=self.press)["answer"]
-        
-        # 更新历史
-        self.conversation_history.extend([user_input, response])
-        
-        # 保持历史长度
-        if len(self.conversation_history) > 10:
-            self.conversation_history = self.conversation_history[-10:]
-        
-        return response
-    
-    def get_stats(self):
-        return self.press.get_stats()
-
-# 使用示例
-bot = PiKVChatBot()
-response = bot.chat("你好，请介绍一下 PiKV Routing 技术")
-print(response)
-```
-
-## 支持的模型
-
-PiKV Routing 支持以下模型架构：
+PiKV Routing supports the following model architectures:
 
 - ✅ **LlamaForCausalLM** (Llama 2/3, Code Llama)
 - ✅ **MistralForCausalLM** (Mistral, Mixtral)
@@ -514,72 +407,72 @@ PiKV Routing 支持以下模型架构：
 - ✅ **Gemma3ForCausalLM** (Gemma 3)
 - ✅ **GPT2LMHeadModel** (GPT-2)
 
-## 故障排除
+## Troubleshooting
 
-### 常见问题
+### Common Issues
 
-1. **模型不支持**
+1. **Unsupported Model**
 ```python
-# 检查模型类型
+# Check model type
 print(type(model))
-# 确保使用支持的模型类型
+# Ensure using supported model types
 ```
 
-2. **内存不足**
+2. **Insufficient Memory**
 ```python
-# 降低压缩比
+# Reduce compression ratio
 press = MoERouterPress(compression_ratio=0.3)
 
-# 或减少专家数量
+# Or reduce number of experts
 press = MoERouterPress(num_experts=2)
 ```
 
-3. **性能问题**
+3. **Performance Issues**
 ```python
-# 启用 flash attention
+# Enable flash attention
 pipe = pipeline("kv-press-text-generation", 
                 model=model, 
                 device=device,
                 model_kwargs={"attn_implementation": "flash_attention_2"})
 ```
 
-### 调试模式
+### Debug Mode
 
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-# 启用详细日志
+# Enable detailed logging
 press = MoERouterPress(router_type="pikv")
-# 查看路由决策详情
+# View routing decision details
 ```
 
-## 贡献
+## Contributing
 
-我们欢迎贡献！如果您想添加新的路由器类型或改进现有功能，请：
+We welcome contributions! If you want to add new router types or improve existing features, please:
 
-1. Fork 项目
-2. 创建功能分支
-3. 提交更改
-4. 创建 Pull Request
+1. Fork the project
+2. Create a feature branch
+3. Submit changes
+4. Create a Pull Request
 
-## 许可证
+## License
 
 Apache 2.0 License
 
-## 引用
+## Citation
 
-如果您在研究中使用了 PiKV Routing，请引用：
+If you use PiKV Routing in your research, please cite:
 
 ```bibtex
 @misc{kvpress2024,
   title={KVPress: KV Cache Compression with PiKV Routing},
-  author={NVIDIA},
+  author={Dong Liu},
   year={2024},
-  url={https://github.com/NVIDIA/kvpress}
+  url={https://github.com/NoakLiu/kvpress}
 }
 ```
 
 ---
 
-**开始使用 PiKV Routing 来优化您的长上下文 LLM 应用！** 🚀
+**Start using PiKV Routing to optimize your long-context LLM applications!** 🚀
