@@ -28,7 +28,7 @@ PiKVPress is a powerful KV cache compression framework that integrates **PiKV Ro
 
 
 ```bash
-git clone https://github.com/NoakLiu/kvpress.git
+git clone https://github.com/NoakLiu/PiKVpress.git
 cd kvpress
 poetry install --with dev
 ```
@@ -465,8 +465,8 @@ Apache 2.0 License
 If you use PiKV Routing in your research, please cite:
 
 ```bibtex
-@misc{kvpress2024,
-  title={KVPress: KV Cache Compression with PiKV Routing},
+@misc{PiKVpress2024,
+  title={PiKVPress: KV Cache Compression with PiKV Routing},
   author={Dong Liu},
   year={2024},
   url={https://github.com/NoakLiu/kvpress}
