@@ -9,6 +9,92 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from kvpress.presses import MoERouterPress
 
+def test_moe_router_directly():
+    """直接测试MoE路由器功能，不依赖模型"""
+    print("\n=== 直接测试MoE路由器 ===")
+    
+    from kvpress.presses.moe_router_press import BaseMoERouter
+    
+    # 创建路由器
+    router = BaseMoERouter(
+        hidden_size=768,
+        num_experts=2,
+        top_k=1
+    )
+    
+    # 创建测试数据
+    batch_size, seq_len = 2, 10
+    hidden_states = torch.randn(batch_size, seq_len, 768)
+    
+    print(f"输入形状: {hidden_states.shape}")
+    
+    # 执行路由
+    dispatch_tensor, combine_tensor, router_probs, aux_loss = router(hidden_states)
+    
+    print(f"✓ 路由成功")
+    print(f"  - 调度张量形状: {dispatch_tensor.shape}")
+    print(f"  - 组合张量形状: {combine_tensor.shape}")
+    print(f"  - 路由概率形状: {router_probs.shape}")
+    print(f"  - 辅助损失: {aux_loss.item():.4f}")
+    
+    # 获取统计信息
+    stats = router.get_routing_stats()
+    print(f"✓ 路由统计:")
+    print(f"  - 专家使用比例: {stats['expert_usage_ratios'].tolist()}")
+    print(f"  - 专家使用计数: {stats['expert_usage_count'].tolist()}")
+    print(f"  - 总token数: {stats['total_tokens'].item()}")
+    
+    return True
+
+def test_moe_press_compression():
+    """测试MoE Press的压缩功能"""
+    print("\n=== 测试MoE Press压缩 ===")
+    
+    from kvpress.presses import MoERouterPress
+    from unittest.mock import Mock
+    
+    # 创建MoE Press
+    moe_press = MoERouterPress(
+        num_experts=2,
+        router_type="base",
+        cache_aware=False
+    )
+    
+    # 创建模拟模块
+    mock_module = Mock()
+    mock_module.layer_idx = 0
+    
+    # 创建测试数据
+    hidden_states = torch.randn(2, 10, 768)
+    keys = torch.randn(2, 12, 20, 64)  # [batch, heads, seq_len, head_dim]
+    values = torch.randn(2, 12, 20, 64)
+    attentions = torch.randn(2, 12, 10, 20)
+    kwargs = {}
+    
+    print(f"原始KV形状: {keys.shape}")
+    
+    # 执行压缩
+    compressed_keys, compressed_values = moe_press.compress(
+        mock_module, hidden_states, keys, values, attentions, kwargs
+    )
+    
+    print(f"✓ 压缩成功")
+    print(f"  - 压缩后KV形状: {compressed_keys.shape}")
+    print(f"  - 压缩比例: {(keys.shape[2] - compressed_keys.shape[2]) / keys.shape[2]:.2f}")
+    
+    # 获取统计信息
+    stats = moe_press.get_stats()
+    print(f"✓ MoE Press统计:")
+    print(f"  - 总辅助损失: {stats['total_aux_loss']:.4f}")
+    print(f"  - 前向传播次数: {stats['forward_count']}")
+    
+    if stats['layer_stats']:
+        layer_0_stats = stats['layer_stats'][0]
+        expert_usage = layer_0_stats['expert_compression_stats']['expert_usage']
+        print(f"  - 专家使用情况: {expert_usage.tolist()}")
+    
+    return True
+
 def main():
     # 使用最小的模型
     model_name = "distilgpt2"  # 只有82M参数
@@ -154,6 +240,13 @@ if __name__ == "__main__":
     # 检查PyTorch版本
     print(f"PyTorch版本: {torch.__version__}")
     print(f"CUDA可用: {torch.cuda.is_available()}")
+    
+    # 首先运行直接测试
+    try:
+        test_moe_router_directly()
+        test_moe_press_compression()
+    except Exception as e:
+        print(f"直接测试失败: {e}")
     
     try:
         main()

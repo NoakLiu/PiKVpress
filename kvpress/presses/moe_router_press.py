@@ -571,6 +571,65 @@ class MoERouterPress(BasePress):
             layer_stats["compression_ratios"].zero_()
             layer_stats["cache_hit_rates"].zero_()
     
+    def forward_hook(self, module: nn.Module, input: list[torch.Tensor], kwargs: dict, output: list):
+        """
+        重写forward_hook方法以支持GPT2和其他模型
+        """
+        # 检测模型类型并提取参数
+        if isinstance(module, torch.nn.Module) and hasattr(module, '_model_type'):
+            # GPT2模型：参数在input中
+            if module._model_type == 'gpt2':
+                hidden_states = input[0] if input else None
+                # GPT2可能没有past_key_value，需要特殊处理
+                if len(input) > 1 and input[1] is not None:
+                    cache = input[1]
+                else:
+                    # 如果没有缓存，直接返回
+                    return output
+            else:
+                # 其他模型：参数在kwargs中
+                hidden_states = kwargs.get("hidden_states")
+                cache = kwargs.get("past_key_value")
+        else:
+            # 默认尝试从kwargs获取
+            hidden_states = kwargs.get("hidden_states")
+            cache = kwargs.get("past_key_value")
+        
+        # 如果没有hidden_states，尝试从input获取
+        if hidden_states is None and input:
+            hidden_states = input[0]
+        
+        # 如果仍然没有hidden_states，直接返回
+        if hidden_states is None:
+            return output
+        
+        # 如果没有缓存，直接返回
+        if cache is None:
+            return output
+        
+        q_len = hidden_states.shape[1]
+        
+        # 检查是否需要压缩（简化版本，不检查cache_position）
+        # 对于GPT2，我们总是尝试压缩
+        
+        # 获取缓存
+        if hasattr(cache, 'key_cache') and hasattr(cache, 'value_cache'):
+            # 标准缓存格式
+            keys = cache.key_cache[module.layer_idx]
+            values = cache.value_cache[module.layer_idx]
+        else:
+            # 可能是其他格式，直接返回
+            return output
+        
+        # 执行压缩
+        keys, values = self.compress(module, hidden_states, keys, values, output[1] if len(output) > 1 else None, kwargs)
+        
+        # 更新缓存
+        cache.key_cache[module.layer_idx] = keys
+        cache.value_cache[module.layer_idx] = values
+        
+        return output
+    
     @contextmanager
     def __call__(self, model: PreTrainedModel):
         """
@@ -594,6 +653,8 @@ class MoERouterPress(BasePress):
                 layers = model.transformer.h
                 for i, layer in enumerate(layers):
                     layer.layer_idx = i
+                    # 标记模型类型
+                    layer.attn._model_type = 'gpt2'
                     # 注册到注意力层
                     hooks.append(layer.attn.register_forward_hook(self.forward_hook, with_kwargs=True))
             else:
