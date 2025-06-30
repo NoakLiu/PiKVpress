@@ -764,7 +764,7 @@ class HierarchicalRouter(BaseMoERouter):
             # 对每个组进行组内路由
             for g in range(self.num_groups):
                 # 找到属于当前组的位置
-                group_mask = (current_group_indices == g)
+                group_mask = (current_group_indices == g)  # [batch_size, seq_len]
                 if not group_mask.any():
                     continue
                 
@@ -779,17 +779,22 @@ class HierarchicalRouter(BaseMoERouter):
                 intra_group_probs = F.softmax(intra_group_logits, dim=-1)
                 
                 # 计算最终专家概率（组概率 × 组内概率）
-                group_prob_values = current_group_probs[group_mask].unsqueeze(-1)
-                final_intra_probs = intra_group_probs * group_prob_values
+                group_prob_values = current_group_probs[group_mask].unsqueeze(-1)  # [num_tokens, 1]
+                final_intra_probs = intra_group_probs * group_prob_values  # [num_tokens, experts_per_group]
                 
                 # 映射到全局专家索引
                 expert_start_idx = g * self.experts_per_group
                 expert_end_idx = expert_start_idx + self.experts_per_group
                 
                 # 将组内概率映射到全局专家概率张量
-                expert_indices = torch.arange(expert_start_idx, expert_end_idx, device=hidden_states.device)
-                for i, expert_idx in enumerate(expert_indices):
-                    final_expert_probs[group_mask, expert_idx] = final_intra_probs[:, i]
+                # 使用scatter_来正确映射
+                for i in range(self.experts_per_group):
+                    expert_idx = expert_start_idx + i
+                    if expert_idx < self.num_experts:
+                        # 创建索引张量
+                        batch_indices, seq_indices = torch.where(group_mask)
+                        if len(batch_indices) > 0:
+                            final_expert_probs[batch_indices, seq_indices, expert_idx] = final_intra_probs[:, i]
         
         # 获取top_k专家
         top_k_probs, top_k_indices = torch.topk(final_expert_probs, k=self.top_k, dim=-1)
