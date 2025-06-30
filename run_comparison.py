@@ -38,7 +38,7 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map=device,
+        device_map="auto",  # 使用auto而不是具体device
         use_safetensors=True  # 使用safetensors格式避免PyTorch版本问题
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -108,7 +108,7 @@ def main():
     
     start_time = time.time()
     try:
-        pipe = pipeline("kv-press-text-generation", model=model, tokenizer=tokenizer, device=model.device)
+        pipe = pipeline("kv-press-text-generation", model=model, tokenizer=tokenizer)
         result = pipe(context, question=question, press=duo_press)
         end_time = time.time()
         

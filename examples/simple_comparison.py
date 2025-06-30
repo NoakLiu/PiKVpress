@@ -12,8 +12,16 @@ Run this script to see the performance differences.
 
 import time
 import torch
+import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from kvpress import MoERouterPress, DuoAttentionPress, ComposedPress, BasePress
+
+class TestDuoAttentionPress(DuoAttentionPress):
+    """Test version of DuoAttentionPress that works with any model"""
+    @staticmethod
+    def load_attention_pattern(model):
+        n_layers, n_heads = model.config.num_hidden_layers, model.config.num_key_value_heads
+        return 2, 2, np.random.rand(n_layers, n_heads)
 
 class NoCompressionPress(BasePress):
     """Baseline press that doesn't compress KV cache"""
@@ -59,7 +67,7 @@ def run_experiment(method_name, press, model, tokenizer, context, question, max_
             generated_text = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         else:
             # Use pipeline with press
-            pipe = pipeline("kv-press-text-generation", model=model, tokenizer=tokenizer, device=model.device)
+            pipe = pipeline("kv-press-text-generation", model=model, tokenizer=tokenizer)
             result = pipe(context, question=question, press=press)
             generated_text = result["answer"]
         
@@ -102,7 +110,7 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map=device,
+        device_map="auto",  # 使用auto而不是具体device
         use_safetensors=True  # 使用safetensors格式避免PyTorch版本问题
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -150,7 +158,7 @@ def main():
         results.append(result1)
     
     # Method 2: Duo Attention Only
-    duo_press = DuoAttentionPress(head_compression_ratio=compression_ratio)
+    duo_press = TestDuoAttentionPress(head_compression_ratio=compression_ratio)
     result2 = run_experiment("Duo Attention", duo_press, model, tokenizer, context, question)
     if result2:
         results.append(result2)
@@ -162,7 +170,7 @@ def main():
         top_k=2,
         compression_ratio=compression_ratio * 0.7  # Slightly less aggressive
     )
-    duo_press_combined = DuoAttentionPress(head_compression_ratio=compression_ratio * 0.3)
+    duo_press_combined = TestDuoAttentionPress(head_compression_ratio=compression_ratio * 0.3)
     combined_press = ComposedPress([eplb_press, duo_press_combined])
     
     result3 = run_experiment("EPLB + Duo Attention", combined_press, model, tokenizer, context, question)

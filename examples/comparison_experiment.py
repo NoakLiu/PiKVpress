@@ -90,7 +90,7 @@ class ExperimentRunner:
         self.model = AutoModelForCausalLM.from_pretrained(
             config.model_name,
             torch_dtype=torch.float16 if config.device == "cuda" else torch.float32,
-            device_map=config.device,
+            device_map="auto",  # 使用auto而不是具体device
             use_safetensors=True  # 使用safetensors格式避免PyTorch版本问题
         )
         self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
@@ -103,8 +103,7 @@ class ExperimentRunner:
         self.pipe = pipeline(
             "kv-press-text-generation",
             model=self.model,
-            tokenizer=self.tokenizer,
-            device=config.device
+            tokenizer=self.tokenizer
         )
         
         # Generate test contexts
