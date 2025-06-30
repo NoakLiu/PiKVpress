@@ -14,7 +14,9 @@ from typing import Dict, List
 try:
     from kvpress import (
         MoERouterPress, 
-        DuoAttentionPress, 
+        KnormPress,
+        SnapKVPress,
+        AdaKVPress,
         ComposedPress,
         BasePress
     )
@@ -45,7 +47,10 @@ class KVPressMoEComparison:
         }
         
         # 创建模拟模块
-        self.mock_module = type('MockModule', (), {'layer_idx': 0})()
+        self.mock_module = type('MockModule', (), {
+            'layer_idx': 0,
+            'config': type('MockConfig', (), {'_attn_implementation': 'flash_attention_2'})()
+        })()
     
     def measure_compression_metrics(self, press: BasePress) -> Dict[str, float]:
         """测量压缩指标"""
@@ -148,9 +153,11 @@ class KVPressMoEComparison:
         print("KVPress类型对比实验")
         print("="*60)
         
-        # 定义不同的KVPress配置
+        # 定义不同的KVPress配置 - 使用更简单的Press类型
         kvpress_configs = {
-            'duo_attention': DuoAttentionPress(head_compression_ratio=0.3),
+            'knorm': KnormPress(compression_ratio=0.3),
+            'snapkv': SnapKVPress(compression_ratio=0.3, window_size=2),
+            'adakov': AdaKVPress(press=KnormPress(compression_ratio=0.3)),
             'moe_base': MoERouterPress(router_type="base", compression_ratio=0.3),
             'moe_pikv': MoERouterPress(router_type="pikv", compression_ratio=0.3),
         }
@@ -187,14 +194,14 @@ class KVPressMoEComparison:
         print("组合Press对比实验")
         print("="*60)
         
-        # 定义不同的组合配置
+        # 定义不同的组合配置 - 使用更简单的Press类型
         combined_configs = {
-            'duo_moe_base': ComposedPress([
-                DuoAttentionPress(head_compression_ratio=0.2),
+            'knorm_moe_base': ComposedPress([
+                KnormPress(compression_ratio=0.2),
                 MoERouterPress(router_type="base", compression_ratio=0.3)
             ]),
-            'duo_moe_pikv': ComposedPress([
-                DuoAttentionPress(head_compression_ratio=0.2),
+            'snapkv_moe_pikv': ComposedPress([
+                SnapKVPress(compression_ratio=0.2, window_size=2),
                 MoERouterPress(router_type="pikv", compression_ratio=0.3)
             ]),
         }
