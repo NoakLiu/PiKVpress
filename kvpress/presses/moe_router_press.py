@@ -808,11 +808,31 @@ class HierarchicalRouter(BaseMoERouter):
         )
         
         # 计算层次化损失（组级 + 专家级）
-        group_balance_loss = self._compute_load_balancing_loss(group_probs, top_group_indices)
+        # 组级损失：使用组概率和组索引
+        group_balance_loss = self._compute_group_balance_loss(group_probs, top_group_indices)
+        # 专家级损失：使用专家概率和专家索引
         expert_balance_loss = self._compute_load_balancing_loss(final_expert_probs, top_k_indices)
         aux_loss = group_balance_loss + expert_balance_loss
         
         return dispatch_tensor, combine_tensor, final_expert_probs, aux_loss
+    
+    def _compute_group_balance_loss(
+        self, 
+        group_probs: torch.Tensor, 
+        group_indices: torch.Tensor
+    ) -> torch.Tensor:
+        """计算组级负载平衡损失"""
+        # 计算每个组的使用率
+        group_prob_per_group = group_probs.mean(dim=[0, 1])  # [num_groups]
+        
+        # 计算组分配的实际比例
+        group_mask = F.one_hot(group_indices, num_classes=self.num_groups).float()
+        group_usage_rate = group_mask.mean(dim=[0, 1, 2])  # [num_groups]
+        
+        # 负载平衡损失：期望使用率与实际使用率的差异
+        balance_loss = torch.sum(group_prob_per_group * group_usage_rate)
+        
+        return balance_loss * self.num_groups
 
 
 @dataclass
