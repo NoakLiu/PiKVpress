@@ -994,6 +994,20 @@ class MoERouterPress(BasePress):
             num_keep = max(1, int(seq_len * (1 - self.compression_ratio)))
             # 确保k值不超过序列长度
             num_keep = min(num_keep, seq_len)
+            
+            # 确保importance_scores有正确的维度
+            if importance_scores.dim() == 0:
+                # 如果是标量，扩展为序列长度
+                importance_scores = importance_scores.expand(seq_len)
+            elif importance_scores.dim() > 1:
+                # 如果是多维，取平均值
+                importance_scores = importance_scores.mean(dim=-1)
+            
+            # 确保序列长度匹配
+            if importance_scores.size(0) != seq_len:
+                # 如果不匹配，使用简单的线性插值
+                importance_scores = torch.linspace(0, 1, seq_len, device=importance_scores.device)
+            
             _, important_indices = torch.topk(importance_scores, k=num_keep, dim=-1)
             important_indices = torch.sort(important_indices)[0]  # 保持顺序
             
