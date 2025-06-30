@@ -140,8 +140,9 @@ class TestPiKVMoERouter:
         router.update_cache_usage(expert_idx=0, cache_hit_rate=0.8)
         router.update_cache_usage(expert_idx=1, cache_hit_rate=0.6)
         
-        assert router.cache_hit_rates[0].item() == 0.8
-        assert router.cache_hit_rates[1].item() == 0.6
+        # 使用torch.allclose来处理浮点数精度问题
+        assert torch.allclose(router.cache_hit_rates[0], torch.tensor(0.8), atol=1e-6)
+        assert torch.allclose(router.cache_hit_rates[1], torch.tensor(0.6), atol=1e-6)
     
     def test_cache_aware_adjustment(self):
         """测试缓存感知调整"""
@@ -167,14 +168,16 @@ class TestPiKVMoERouter:
         # 设置缓存命中率
         router.cache_hit_rates = torch.tensor([0.8, 0.6, 0.4, 0.2])
         
-        # 前向传播
+        # 前向传播 - PiKVMoERouter返回5个值
         hidden_states = torch.randn(2, 10, 512)
-        dispatch_tensor, combine_tensor, router_probs, aux_loss = router(hidden_states)
+        dispatch_tensor, combine_tensor, router_probs, aux_loss, importance = router(hidden_states)
         
-        # 检查输出
-        assert dispatch_tensor.shape == (2, 10, 4, router._compute_capacity(2, 10))
-        assert combine_tensor.shape == (2, 10, 4, router._compute_capacity(2, 10))
+        # 验证输出形状
+        assert dispatch_tensor.shape == (2, 10, 4, 15)  # batch, seq, experts, capacity
+        assert combine_tensor.shape == (2, 10, 4, 15)
         assert router_probs.shape == (2, 10, 4)
+        assert isinstance(aux_loss, torch.Tensor)
+        assert importance.shape == (2, 10)  # 重要性分数
 
 
 class TestMoERouterPress:
