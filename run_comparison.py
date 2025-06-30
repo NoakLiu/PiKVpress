@@ -8,8 +8,44 @@ Run with: python run_comparison.py
 
 import time
 import torch
+import numpy as np
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from kvpress import MoERouterPress, DuoAttentionPress, ComposedPress, BasePress
+
+class TestDuoAttentionPress(DuoAttentionPress):
+    """Test version of DuoAttentionPress that works with any model"""
+    @staticmethod
+    def load_attention_pattern(model):
+        n_layers = model.config.num_hidden_layers
+        # GPT2使用num_attention_heads，其他模型使用num_key_value_heads
+        if hasattr(model.config, 'num_key_value_heads'):
+            n_heads = model.config.num_key_value_heads
+        else:
+            n_heads = model.config.num_attention_heads
+        return 2, 2, np.random.rand(n_layers, n_heads)
+
+class GPT2MoERouterPress(MoERouterPress):
+    """GPT2-compatible version of MoERouterPress"""
+    def __call__(self, model):
+        """Override to support GPT2 model structure"""
+        if not hasattr(model, 'transformer'):
+            raise ValueError("GPT2 model must have transformer attribute")
+        
+        hooks = []
+        try:
+            # GPT2模型结构
+            layers = model.transformer.h
+            for i, layer in enumerate(layers):
+                layer.layer_idx = i
+                # 注册到注意力层
+                hooks.append(layer.attn.register_forward_hook(self.forward_hook, with_kwargs=True))
+            
+            yield
+            
+        finally:
+            # 清理hooks
+            for hook in hooks:
+                hook.remove()
 
 class NoCompressionPress(BasePress):
     """Baseline press that doesn't compress KV cache"""
