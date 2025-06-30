@@ -102,7 +102,8 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map=device
+        device_map=device,
+        use_safetensors=True  # 使用safetensors格式避免PyTorch版本问题
     )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     
