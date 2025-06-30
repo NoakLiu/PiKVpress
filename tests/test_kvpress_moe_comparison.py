@@ -22,7 +22,8 @@ from kvpress import (
     AdaKVPress, 
     ComposedPress,
     BasePress,
-    KnormPress
+    KnormPress,
+    SnapKVPress
 )
 from kvpress.presses.moe_router_press import (
     BaseMoERouter,
@@ -54,6 +55,9 @@ class TestKVPressMoEComparison:
         """创建模拟模块"""
         module = Mock()
         module.layer_idx = 0
+        # 添加必要的配置属性
+        module.config = Mock()
+        module.config._attn_implementation = "flash_attention_2"
         return module
     
     def measure_compression_metrics(
@@ -144,9 +148,10 @@ class TestKVPressMoEComparison:
         print("KVPress类型对比实验")
         print("="*60)
         
-        # 定义不同的KVPress配置
+        # 定义不同的KVPress配置 - 使用更简单的Press类型
         kvpress_configs = {
-            'duo_attention': DuoAttentionPress(head_compression_ratio=0.3),
+            'knorm': KnormPress(compression_ratio=0.3),
+            'snapkv': SnapKVPress(compression_ratio=0.3, window_size=2),
             'adakov': AdaKVPress(press=KnormPress(compression_ratio=0.3)),
             'moe_base': MoERouterPress(router_type="base", compression_ratio=0.3),
             'moe_pikv': MoERouterPress(router_type="pikv", compression_ratio=0.3),
@@ -184,23 +189,23 @@ class TestKVPressMoEComparison:
         print("组合Press对比实验")
         print("="*60)
         
-        # 定义不同的组合配置
+        # 定义不同的组合配置 - 使用更简单的Press类型
         combined_configs = {
-            'duo_moe_base': ComposedPress([
-                DuoAttentionPress(head_compression_ratio=0.2),
+            'knorm_moe_base': ComposedPress([
+                KnormPress(compression_ratio=0.2),
                 MoERouterPress(router_type="base", compression_ratio=0.3)
             ]),
-            'duo_moe_pikv': ComposedPress([
-                DuoAttentionPress(head_compression_ratio=0.2),
+            'snapkv_moe_pikv': ComposedPress([
+                SnapKVPress(compression_ratio=0.2, window_size=2),
                 MoERouterPress(router_type="pikv", compression_ratio=0.3)
             ]),
             'knorm_moe_eplb': ComposedPress([
                 KnormPress(compression_ratio=0.2),
                 MoERouterPress(router_type="eplb", compression_ratio=0.3)
             ]),
-            'moe_hierarchical_duo': ComposedPress([
+            'moe_hierarchical_knorm': ComposedPress([
                 MoERouterPress(router_type="hierarchical", compression_ratio=0.2),
-                DuoAttentionPress(head_compression_ratio=0.3)
+                KnormPress(compression_ratio=0.3)
             ])
         }
         
@@ -335,13 +340,14 @@ class TestKVPressMoEComparison:
         print("性能基准测试")
         print("="*60)
         
-        # 定义基准配置 - 移除BasePress因为它没有实现compress方法
+        # 定义基准配置 - 使用更简单的Press类型
         benchmark_configs = {
-            'duo_attention': DuoAttentionPress(head_compression_ratio=0.3),
+            'knorm': KnormPress(compression_ratio=0.3),
+            'snapkv': SnapKVPress(compression_ratio=0.3, window_size=2),
             'moe_pikv': MoERouterPress(router_type="pikv", compression_ratio=0.3),
             'moe_eplb': MoERouterPress(router_type="eplb", compression_ratio=0.3),
             'combined_optimal': ComposedPress([
-                DuoAttentionPress(head_compression_ratio=0.2),
+                KnormPress(compression_ratio=0.2),
                 MoERouterPress(router_type="pikv", compression_ratio=0.2)
             ])
         }
