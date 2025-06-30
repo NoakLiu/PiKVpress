@@ -992,6 +992,8 @@ class MoERouterPress(BasePress):
             
             # 选择重要性最高的位置
             num_keep = max(1, int(seq_len * (1 - self.compression_ratio)))
+            # 确保k值不超过序列长度
+            num_keep = min(num_keep, seq_len)
             _, important_indices = torch.topk(importance_scores, k=num_keep, dim=-1)
             important_indices = torch.sort(important_indices)[0]  # 保持顺序
             
