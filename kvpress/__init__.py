@@ -14,6 +14,7 @@ from kvpress.presses.duo_attention_press import DuoAttentionPress
 from kvpress.presses.expected_attention_press import ExpectedAttentionPress
 from kvpress.presses.key_rerotation_press import KeyRerotationPress
 from kvpress.presses.knorm_press import KnormPress
+from kvpress.presses.moe_router_press import MoERouterPress
 from kvpress.presses.observed_attention_press import ObservedAttentionPress
 from kvpress.presses.per_layer_compression_press import PerLayerCompressionPress
 from kvpress.presses.random_press import RandomPress
@@ -41,6 +42,7 @@ __all__ = [
     "ScorerPress",
     "ExpectedAttentionPress",
     "KnormPress",
+    "MoERouterPress",
     "ObservedAttentionPress",
     "RandomPress",
     "SimLayerKVPress",
