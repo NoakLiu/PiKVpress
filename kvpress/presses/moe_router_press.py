@@ -4,6 +4,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, List, Tuple, Union
+from contextlib import contextmanager
 
 import torch
 import torch.nn as nn
@@ -11,9 +12,29 @@ import torch.nn.functional as F
 import math
 
 from kvpress.presses.base_press import BasePress
+from transformers import (
+    LlamaForCausalLM,
+    MistralForCausalLM,
+    Phi3ForCausalLM,
+    Qwen2ForCausalLM,
+    Qwen3ForCausalLM,
+    Gemma3ForCausalLM,
+    GPT2LMHeadModel,
+    PreTrainedModel,
+)
 
 logger = logging.getLogger(__name__)
 
+# 支持的模型类型
+SUPPORTED_MODELS = (
+    LlamaForCausalLM,
+    MistralForCausalLM,
+    Phi3ForCausalLM,
+    Qwen2ForCausalLM,
+    Qwen3ForCausalLM,
+    Gemma3ForCausalLM,
+    GPT2LMHeadModel,  # 添加GPT2支持
+)
 
 class BaseMoERouter(nn.Module):
     """
@@ -548,4 +569,44 @@ class MoERouterPress(BasePress):
         for layer_stats in self.expert_compression_stats.values():
             layer_stats["expert_usage"].zero_()
             layer_stats["compression_ratios"].zero_()
-            layer_stats["cache_hit_rates"].zero_() 
+            layer_stats["cache_hit_rates"].zero_()
+    
+    @contextmanager
+    def __call__(self, model: PreTrainedModel):
+        """
+        应用MoE路由器Press到模型
+        
+        Args:
+            model: 预训练模型
+            
+        Returns:
+            context manager
+        """
+        if not isinstance(model, SUPPORTED_MODELS):
+            logger.warning(f"Model {type(model)} not tested, supported models: {SUPPORTED_MODELS}")
+        
+        hooks = []
+        
+        try:
+            # 根据模型类型选择不同的层访问方式
+            if isinstance(model, GPT2LMHeadModel):
+                # GPT2模型结构
+                layers = model.transformer.h
+                for i, layer in enumerate(layers):
+                    layer.layer_idx = i
+                    # 注册到注意力层
+                    hooks.append(layer.attn.register_forward_hook(self.forward_hook, with_kwargs=True))
+            else:
+                # 其他模型（Llama, Mistral等）
+                layers = model.model.layers
+                for i, layer in enumerate(layers):
+                    layer.layer_idx = i
+                    # 注册到注意力层
+                    hooks.append(layer.self_attn.register_forward_hook(self.forward_hook, with_kwargs=True))
+            
+            yield
+            
+        finally:
+            # 清理hooks
+            for hook in hooks:
+                hook.remove() 
